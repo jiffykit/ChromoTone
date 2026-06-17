@@ -8170,6 +8170,77 @@ NESTED REPEATS: [[C Am F G]x2 [C Dm Em F^]x2]x4
                     } catch (_) { }
                     return fb;
                 };
+                if (typeof window._getSequenceLaneDenominator !== 'function') {
+                    window._getSequenceLaneDenominator = function (lane, fallback) {
+                        let denom = Math.max(1, parseInt(String(fallback || 16), 10) || 16);
+                        try {
+                            const cached = lane?._previewQuant || lane?._pendingQuant || lane?._quant || null;
+                            if (cached && Number.isFinite(cached.D) && cached.D > 0) denom = cached.D | 0;
+                            const qStr = String(lane?.dataset?.pendingQuant || lane?.dataset?.quant || '').trim();
+                            const frac = qStr.match(/^\s*(\d+)\s*\/\s*(\d+)\s*$/);
+                            if (frac) {
+                                const d = parseInt(frac[2], 10);
+                                if (Number.isFinite(d) && d > 0) denom = d;
+                            } else {
+                                const whole = qStr.match(/^\s*(\d+)\s*$/);
+                                if (whole) {
+                                    const d = parseInt(whole[1], 10);
+                                    if (Number.isFinite(d) && d > 0) denom = d;
+                                }
+                            }
+                            if (!denom || denom < 1) {
+                                const styled = parseInt(lane?.style?.getPropertyValue('--steps-per-bar') || '', 10);
+                                if (Number.isFinite(styled) && styled > 0) denom = styled;
+                            }
+                            if (!denom || denom < 1) {
+                                const count = lane && lane.querySelectorAll ? lane.querySelectorAll('.drum-step, .pattern-step').length : 0;
+                                if (count > 0) denom = count;
+                            }
+                        } catch (_) { }
+                        return Math.max(1, denom | 0);
+                    };
+                }
+                if (typeof window._refreshSequenceGridBarSteps !== 'function') {
+                    window._refreshSequenceGridBarSteps = function (root, opts = {}) {
+                        try {
+                            if (!root) return 0;
+                            const grid = (root.matches && (root.matches('.drum-grid, .pattern-grid, #drumGrid, #patternGrid') ? root : null))
+                                || (root.closest && root.closest('.drum-grid, .pattern-grid, #drumGrid, #patternGrid'))
+                                || (root.querySelector && (root.querySelector('#drumGrid, #patternGrid, .pattern-grid, .drum-grid')))
+                                || null;
+                            const container = (grid && grid.closest && grid.closest('.drum-grid-container'))
+                                || (root.closest && root.closest('.drum-grid-container'))
+                                || (root.querySelector && root.querySelector('.drum-grid-container'))
+                                || null;
+                            const scope = grid || container || root;
+                            const selector = opts.laneSelector || ((scope && scope.classList && scope.classList.contains('pattern-grid')) || (scope && scope.id === 'patternGrid')
+                                ? '.pattern-lane'
+                                : '.drum-row:not(.bass-row) .drum-lane');
+                            const fallback = Math.max(1, parseInt(String(
+                                opts.fallback
+                                || grid?.dataset?.previewLength
+                                || grid?.dataset?.pendingLength
+                                || grid?.dataset?.length
+                                || 16
+                            ), 10) || 16);
+                            const lanes = Array.from(scope && scope.querySelectorAll ? scope.querySelectorAll(selector) : []);
+                            const maxD = lanes.reduce((mx, lane) => Math.max(mx, window._getSequenceLaneDenominator(lane, fallback)), fallback);
+                            if (container && container.style) container.style.setProperty('--bar-steps', String(maxD));
+                            if (grid && grid.style) grid.style.setProperty('--bar-steps', String(maxD));
+                            return maxD;
+                        } catch (_) { return 0; }
+                    };
+                }
+                if (typeof window._resizeSequenceArray !== 'function') {
+                    window._resizeSequenceArray = function (arr, toLen, fillValue) {
+                        const len = Math.max(1, parseInt(String(toLen || 1), 10) || 1);
+                        const out = new Array(len).fill(fillValue);
+                        const src = Array.isArray(arr) ? arr : [];
+                        const copyLen = Math.min(len, src.length);
+                        for (let i = 0; i < copyLen; i++) out[i] = src[i];
+                        return out;
+                    };
+                }
                 const getMaxQ = (input) => {
                     let maxQ = parseInt(input?.max || '', 10);
                     if (!Number.isFinite(maxQ) || maxQ <= 0) {
@@ -9269,6 +9340,7 @@ NESTED REPEATS: [[C Am F G]x2 [C Dm Em F^]x2]x4
                                         const inst = (window._drumInstances || []).find(x => x && x.id === window._activeDrumInstanceId);
                                         if (inst) {
                                             inst.pendingLen = newLen;
+                                            inst._lenIsDefault = false;
                                             if (typeof window._updateDrumInstanceButtonVisual === 'function') {
                                                 window._updateDrumInstanceButtonVisual(inst);
                                             }
@@ -9282,6 +9354,7 @@ NESTED REPEATS: [[C Am F G]x2 [C Dm Em F^]x2]x4
                                 }
 
                                 grid.dataset.length = String(newLen);
+                                try { grid.dataset.lenEditedExplicit = '1'; } catch (_) { }
                                 try { grid._prevLen16ForResize = oldLen; } catch (_) { }
                                 if (lenVal) lenVal.textContent = String(newLen);
                                 if (lenHint) lenHint.textContent = `Cycle: ${newLen} steps`;
@@ -9316,6 +9389,16 @@ NESTED REPEATS: [[C Am F G]x2 [C Dm Em F^]x2]x4
 
                                 // Rebuild drums honoring per-lane quant D (preserve states proportionally)
                                 try { if (typeof window.autoharp?._updateDrumGridForTimeSignature === 'function') { window.autoharp._updateDrumGridForTimeSignature(); } } catch (_) { }
+                                try {
+                                    const inst = (window._drumInstances || []).find(x => x && x.id === window._activeDrumInstanceId);
+                                    if (inst) {
+                                        inst.len = newLen;
+                                        inst._lenIsDefault = false;
+                                        inst.pendingLen = null;
+                                    }
+                                    window._saveActiveDrumInstanceFromUI && window._saveActiveDrumInstanceFromUI();
+                                    if (inst && typeof window._updateDrumInstanceButtonVisual === 'function') window._updateDrumInstanceButtonVisual(inst);
+                                } catch (_) { }
 
                                 // Update container min-width scaling to largest D in drums
                                 try {
@@ -9336,6 +9419,7 @@ NESTED REPEATS: [[C Am F G]x2 [C Dm Em F^]x2]x4
                                         try { window._autoSizePatternModals && window._autoSizePatternModals(maxD); } catch (_) { }
                                     }
                                 } catch (_) { }
+                                try { window._refreshSequenceGridBarSteps && window._refreshSequenceGridBarSteps(grid, { laneSelector: '.drum-row:not(.bass-row) .drum-lane', fallback: newLen }); } catch (_) { }
 
                                 const contentEditables = {};
                                 try {
@@ -9630,7 +9714,6 @@ NESTED REPEATS: [[C Am F G]x2 [C Dm Em F^]x2]x4
                         return cols[0];
                     } catch (_) { return null; }
                 };
-
                 const collectPatternModePitchSteps = (mode) => {
                     const omni = window.autoharp;
                     const tuning = (omni && omni.currentTuning) ? omni.currentTuning : 12;
@@ -12783,6 +12866,23 @@ NESTED REPEATS: [[C Am F G]x2 [C Dm Em F^]x2]x4
                     return { len: safeLen, lanes };
                 };
 
+                const resizeSeqArray = (arr, toLen, fillValue) => {
+                    if (typeof window._resizeSequenceArray === 'function') return window._resizeSequenceArray(arr, toLen, fillValue);
+                    const len = Math.max(1, parseInt(String(toLen || 1), 10) || 1);
+                    const out = new Array(len).fill(fillValue);
+                    const src = Array.isArray(arr) ? arr : [];
+                    const copyLen = Math.min(len, src.length);
+                    for (let i = 0; i < copyLen; i++) out[i] = src[i];
+                    return out;
+                };
+
+                const resizeDrumLaneArrays = (lane, targetLen) => {
+                    if (!lane || typeof lane !== 'object') return;
+                    const len = Math.max(1, parseInt(String(targetLen || 1), 10) || 1);
+                    lane.steps = resizeSeqArray(lane.steps, len, 0);
+                    lane.vel = resizeSeqArray(lane.vel, len, 100);
+                };
+
                 // When TS changes, update only instances that are still using the default LEN.
                 // (If the user explicitly changed LEN, we leave it alone.)
                 window._drumInstancesApplyDefaultLenFromTs = function (oldBarLen16, newBarLen16) {
@@ -12792,18 +12892,6 @@ NESTED REPEATS: [[C Am F G]x2 [C Dm Em F^]x2]x4
                         if (!(oldLen > 0) || !(newLen > 0) || oldLen === newLen) return;
                         const maxLen = (window.autoharp && typeof window.autoharp._getMaxCycleSteps === 'function') ? window.autoharp._getMaxCycleSteps() : 4096;
                         const clamp = (n) => Math.max(1, Math.min(maxLen, parseInt(n || '0', 10) || 0));
-                        const remapArr = (arr, toLen, isVel) => {
-                            const out = new Array(toLen).fill(isVel ? 100 : 0);
-                            const src = Array.isArray(arr) ? arr : [];
-                            const fromLen = src.length || 0;
-                            if (!fromLen) return out;
-                            if (fromLen === toLen) { for (let i = 0; i < toLen; i++) out[i] = src[i]; return out; }
-                            for (let i = 0; i < toLen; i++) {
-                                const j = Math.max(0, Math.min(fromLen - 1, Math.round((i / Math.max(1, toLen - 1)) * (fromLen - 1))));
-                                out[i] = src[j];
-                            }
-                            return out;
-                        };
 
                         const insts = window._drumInstances || [];
                         insts.forEach(inst => {
@@ -12820,9 +12908,8 @@ NESTED REPEATS: [[C Am F G]x2 [C Dm Em F^]x2]x4
                                 const q0 = String(lane.quant || '').trim();
                                 const laneIsDefault = (!q0) || (q0 === String(oldLen)) || (q0 === `${oldLen}/${oldLen}`);
                                 if (laneIsDefault) lane.quant = String(newLen);
-                                const D = clamp(String(lane.quant || newLen));
-                                lane.steps = remapArr(lane.steps, D, false);
-                                lane.vel = remapArr(lane.vel, D, true);
+                                const targetLen = laneIsDefault ? newLen : clamp(String(lane.quant || newLen));
+                                resizeDrumLaneArrays(lane, targetLen);
                             }
                             st.len = newLen;
                             st.lanes = lanes.slice(0, 9);
@@ -12906,6 +12993,7 @@ NESTED REPEATS: [[C Am F G]x2 [C Dm Em F^]x2]x4
                     const len = Math.max(1, Math.min(maxLen, parseInt(state.len || '16', 10) || 16));
 
                     try { grid.dataset.length = String(len); } catch (_) { }
+                    try { delete grid.dataset.lenEditedExplicit; } catch (_) { }
                     try {
                         const lenVal = document.getElementById('drumLenValue');
                         const lenHint = document.getElementById('drumLenHint');
@@ -12930,22 +13018,7 @@ NESTED REPEATS: [[C Am F G]x2 [C Dm Em F^]x2]x4
                             window.autoharp._updateDrumGridForTimeSignature();
                         }
                     } catch (_) { }
-
-                    const remapArr = (arr, toLen, isVel) => {
-                        const out = new Array(toLen).fill(isVel ? 100 : 0);
-                        const src = Array.isArray(arr) ? arr : [];
-                        const fromLen = src.length || 0;
-                        if (!fromLen) return out;
-                        if (fromLen === toLen) {
-                            for (let i = 0; i < toLen; i++) out[i] = src[i];
-                            return out;
-                        }
-                        for (let i = 0; i < toLen; i++) {
-                            const j = Math.max(0, Math.min(fromLen - 1, Math.round((i / Math.max(1, toLen - 1)) * (fromLen - 1))));
-                            out[i] = src[j];
-                        }
-                        return out;
-                    };
+                    try { window._refreshSequenceGridBarSteps && window._refreshSequenceGridBarSteps(grid, { laneSelector: '.drum-row:not(.bass-row) .drum-lane', fallback: len }); } catch (_) { }
 
                     const rows = Array.from(grid.querySelectorAll('.drum-row:not(.bass-row)'));
                     rows.forEach((row, idx) => {
@@ -12976,8 +13049,8 @@ NESTED REPEATS: [[C Am F G]x2 [C Dm Em F^]x2]x4
                             if (laneEl) laneEl.dataset.quant = String((lane && lane.quant) ? lane.quant : (laneEl.dataset.quant || String(len))).trim();
                         } catch (_) { }
 
-                        const stepsArr = remapArr(lane && lane.steps, stepsEl.length, false);
-                        const velArr = remapArr(lane && lane.vel, stepsEl.length, true);
+                        const stepsArr = resizeSeqArray(lane && lane.steps, stepsEl.length, 0);
+                        const velArr = resizeSeqArray(lane && lane.vel, stepsEl.length, 100);
                         stepsEl.forEach((s, j) => {
                             const on = !!stepsArr[j];
                             if (on) s.classList.add('active'); else s.classList.remove('active');
@@ -12999,7 +13072,14 @@ NESTED REPEATS: [[C Am F G]x2 [C Dm Em F^]x2]x4
                         const inst = getActiveInstance();
                         if (!inst) return;
                         const st = captureEditorState();
-                        if (st) inst.state = st;
+                        if (st) {
+                            inst.state = st;
+                            inst.len = Math.max(1, parseInt(st.len || inst.len || '16', 10) || 16);
+                            try {
+                                const grid = document.getElementById('drumGrid');
+                                if (grid && grid.dataset && grid.dataset.lenEditedExplicit === '1') inst._lenIsDefault = false;
+                            } catch (_) { }
+                        }
                     } catch (_) { }
                 };
                 window._saveActiveDrumInstanceFromUI = saveActiveFromUI;
@@ -26318,21 +26398,6 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                     const st = inst.state || { len: inst.len || newLen, lanes: [] };
                                     const oldLen = clampLen(st.len || inst.len || newLen);
                                     const lanes = Array.isArray(st.lanes) ? st.lanes : [];
-                                    const remapArr = (arr, toLen, isVel) => {
-                                        const out = new Array(toLen).fill(isVel ? 100 : 0);
-                                        const src = Array.isArray(arr) ? arr : [];
-                                        const fromLen = src.length || 0;
-                                        if (!fromLen) return out;
-                                        if (fromLen === toLen) {
-                                            for (let i = 0; i < toLen; i++) out[i] = src[i];
-                                            return out;
-                                        }
-                                        for (let i = 0; i < toLen; i++) {
-                                            const j = Math.max(0, Math.min(fromLen - 1, Math.round((i / Math.max(1, toLen - 1)) * (fromLen - 1))));
-                                            out[i] = src[j];
-                                        }
-                                        return out;
-                                    };
                                     while (lanes.length < 9) lanes.push({ steps: [], vel: [], quant: String(oldLen), vol: 80, send: 0, midi: '', pitch: 0, atk: 2, dec: 180 });
                                     for (let i = 0; i < 9; i++) {
                                         const lane = lanes[i] || (lanes[i] = { steps: [], vel: [], quant: String(oldLen), vol: 80, send: 0, midi: '', pitch: 0, atk: 2, dec: 180 });
@@ -26340,9 +26405,9 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                         const isDefault = (!q0) || (q0 === String(oldLen)) || (q0 === `${oldLen}/${oldLen}`);
                                         if (isDefault) lane.quant = String(newLen);
                                         const q = parseLaneQuant(lane.quant, newLen);
-                                        const D = Math.max(1, Math.min(maxLen, q.D | 0));
-                                        lane.steps = remapArr(lane.steps, D, false);
-                                        lane.vel = remapArr(lane.vel, D, true);
+                                        const targetLen = isDefault ? newLen : Math.max(1, Math.min(maxLen, q.D | 0));
+                                        lane.steps = window._resizeSequenceArray ? window._resizeSequenceArray(lane.steps, targetLen, 0) : lane.steps;
+                                        lane.vel = window._resizeSequenceArray ? window._resizeSequenceArray(lane.vel, targetLen, 100) : lane.vel;
                                     }
                                     st.len = newLen;
                                     st.lanes = lanes.slice(0, 9);
@@ -26590,7 +26655,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                         try {
                             if (gridEl) {
                                 if (curTick === 0 && (gridEl._pendingAudioEdits || !gridEl._audioSnapshot)) {
-                                    const lanesSnap = Array.from(document.querySelectorAll('.drum-lane')).map(lane => {
+                                    const lanesSnap = Array.from(gridEl.querySelectorAll('.drum-row:not(.bass-row) .drum-lane')).map(lane => {
                                         const steps = Array.from(lane.querySelectorAll('.drum-step'));
                                         const D = Math.max(1, steps.length || 16);
                                         const active = steps.map(s => s.classList.contains('active') ? 1 : 0);
@@ -26662,7 +26727,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                         else this._drums.stepsPerBar = steps;
 
                         // Move playheads per-lane using each lane's D against global bar fraction
-                        const lanes = document.querySelectorAll('.drum-lane');
+                        const lanes = gridEl ? gridEl.querySelectorAll('.drum-row:not(.bass-row) .drum-lane') : [];
                         const drumSnap = gridEl ? gridEl._audioSnapshot : null;
                         if (lanes && lanes.length) {
                             const frac = fracCycle; // 0..1 across cycle
@@ -26683,9 +26748,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                     });
                                     if (this._drums._cachedMaxD !== maxD) {
                                         this._drums._cachedMaxD = maxD;
-                                        document.querySelectorAll('.drum-grid-container').forEach(c => c.style.setProperty('--bar-steps', String(maxD)));
-                                        const pGrid = document.getElementById('patternGrid');
-                                        if (pGrid) pGrid.style.setProperty('--bar-steps', String(maxD));
+                                        try { window._refreshSequenceGridBarSteps && window._refreshSequenceGridBarSteps(gridEl, { laneSelector: '.drum-row:not(.bass-row) .drum-lane', fallback: steps }); } catch (_) { }
                                         try { this._autoSizePatternModals && this._autoSizePatternModals(maxD); } catch (_) { }
                                     }
                                 } catch (_) { }
@@ -27825,14 +27888,14 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                             this._drumPatterns = this._drumPatterns || new Map();
                             this._drumPatternLaneQuants = this._drumPatternLaneQuants || new Map();
                             const captureGrid = () => {
-                                const lanes = Array.from(document.querySelectorAll('.drum-row:not(.bass-row) .drum-lane'));
+                                const lanes = Array.from(document.querySelectorAll('#drumGrid .drum-row:not(.bass-row) .drum-lane'));
                                 return lanes.map(lane => {
                                     const steps = Array.from(lane.querySelectorAll('.drum-step')).map(s => s.classList.contains('active') ? 1 : 0);
                                     return steps;
                                 });
                             };
                             const captureLaneQuants = () => {
-                                const lanes = Array.from(document.querySelectorAll('.drum-row:not(.bass-row) .drum-lane'));
+                                const lanes = Array.from(document.querySelectorAll('#drumGrid .drum-row:not(.bass-row) .drum-lane'));
                                 return lanes.map(lane => String(lane.dataset.quant || '').trim());
                             };
                             const updateLaneQuantCache = (lane, fallbackSteps) => {
@@ -27861,7 +27924,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                     } catch (_) { }
                                     return 16;
                                 })();
-                                const lanes = Array.from(document.querySelectorAll('.drum-row:not(.bass-row) .drum-lane'));
+                                const lanes = Array.from(document.querySelectorAll('#drumGrid .drum-row:not(.bass-row) .drum-lane'));
                                 lanes.forEach((lane, i) => {
                                     const q = Array.isArray(arr) ? arr[i] : null;
                                     if (q) lane.dataset.quant = String(q);
@@ -27887,7 +27950,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                             };
                             const applyGrid = (gridArr) => {
                                 if (!Array.isArray(gridArr)) return;
-                                const lanes = Array.from(document.querySelectorAll('.drum-row:not(.bass-row) .drum-lane'));
+                                const lanes = Array.from(document.querySelectorAll('#drumGrid .drum-row:not(.bass-row) .drum-lane'));
                                 lanes.forEach((lane, i) => {
                                     const steps = Array.from(lane.querySelectorAll('.drum-step'));
                                     const row = gridArr[i] || [];
@@ -30089,12 +30152,14 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                     if (!isDefaultQuant(lane.dataset?.quant)) return;
                                     lane.dataset.quant = String(newLen);
                                     lane._quant = { str: String(newLen), N: newLen, D: newLen };
+                                    lane._previewLenResize = true;
                                     try { lane.style.setProperty('--steps-per-bar', String(newLen)); } catch (_) { }
                                     try {
                                         const qInput = lane.closest('.pattern-row')?.querySelector('.drum-quant input');
                                         if (qInput && !qInput.dataset.pending) qInput.value = String(newLen);
                                     } catch (_) { }
                                     try { window.rebuildPatternLaneForQuant && window.rebuildPatternLaneForQuant(lane, patternGrid); } catch (_) { }
+                                    try { delete lane._previewLenResize; } catch (_) { }
                                 });
                                 const container = patternGrid.closest('.drum-grid-container') || patternGrid.parentElement;
                                 if (container && container.style) {
@@ -30679,8 +30744,10 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                         try {
                                             if (targetLen !== committedLen && !lane.dataset.pendingQuant && isDefaultQuant(lane.dataset.quant)) {
                                                 lane._previewQuant = { str: String(targetLen), N: targetLen, D: targetLen };
+                                                lane._previewLenResize = true;
                                             } else {
                                                 delete lane._previewQuant;
+                                                delete lane._previewLenResize;
                                             }
                                         } catch (_) { }
                                         try { window.rebuildPatternLaneForQuant && window.rebuildPatternLaneForQuant(lane, gridEl); } catch (_) { }
@@ -30714,6 +30781,9 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
 
                                     if (targetLen === committedLen) {
                                         try { delete gridEl._lenPreviewSource; } catch (_) { gridEl._lenPreviewSource = null; }
+                                        try {
+                                            Array.from(gridEl.querySelectorAll('.pattern-lane')).forEach(lane => { try { delete lane._previewLenResize; } catch (_) { } });
+                                        } catch (_) { }
                                     }
                                 } catch (_) { }
                             };
@@ -30829,6 +30899,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                 const visualQuant = (lane && lane._previewQuant)
                                     ? lane._previewQuant
                                     : ((lane && lane._pendingQuant) ? lane._pendingQuant : lane._quant);
+                                const lenDrivenResize = !!(lane && lane._previewLenResize);
                                 let toD = Math.max(1, (visualQuant && visualQuant.D) ? (visualQuant.D | 0) : fallbackD);
                                 let toN = Math.max(1, Math.min((visualQuant && visualQuant.N) ? (visualQuant.N | 0) : toD, toD));
                                 try {
@@ -30868,8 +30939,12 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                 if (!isBassRow) {
                                     snap.forEach(o => {
                                         if (!o || !o.active) return;
-                                        if (o.i < 0 || o.i >= toD) return;
-                                        const j = o.i;
+                                        if (o.i < 0) return;
+                                        if (lenDrivenResize && o.i >= toD) return;
+                                        const j = lenDrivenResize
+                                            ? o.i
+                                            : Math.max(0, Math.min(toD - 1, Math.round((o.i / Math.max(1, fromD - 1)) * (toD - 1))));
+                                        if (j < 0 || j >= toD) return;
                                         dest[j].active = 1;
                                         if (o.len) dest[j].len = String(o.len);
                                         if (o.vel != null) dest[j].vel = String(o.vel);
@@ -30885,8 +30960,12 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                         return !(prev && prev.tie === '1');
                                     });
                                     heads.forEach(h => {
-                                        if (h.i < 0 || h.i >= toD) return;
-                                        const j = h.i;
+                                        if (h.i < 0) return;
+                                        if (lenDrivenResize && h.i >= toD) return;
+                                        const j = lenDrivenResize
+                                            ? h.i
+                                            : Math.max(0, Math.min(toD - 1, Math.round((h.i / Math.max(1, fromD - 1)) * (toD - 1))));
+                                        if (j < 0 || j >= toD) return;
                                         const len = Math.max(1, parseInt(h.len || '1', 10) || 1);
                                         dest[j].npc = h.npc;
                                         dest[j].len = String(len);
@@ -30965,6 +31044,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                         if (omni && typeof omni.rebuildBassTieOverlays === 'function') omni.rebuildBassTieOverlays(lane);
                                     }
                                 } catch (_) { }
+                                try { window._refreshSequenceGridBarSteps && window._refreshSequenceGridBarSteps(grid, { laneSelector: '.pattern-lane', fallback: toD }); } catch (_) { }
                             } catch (_) { }
                         };
 
@@ -41333,7 +41413,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                         : (oldDrumDefaultLen16 > 0 ? oldDrumDefaultLen16 : (oldDrumLen16 > 0 ? oldDrumLen16 : 16));
                                     const shouldTreatLegacy16AsDefault = (!usedPrevLen && oldDrumDefaultLen16 === 0 && defaultBasis === 16 && drumBaseLen16 !== 16);
                                     const isDefaultLaneQuant = isDefaultQuantStr(qStr, defaultBasis, shouldTreatLegacy16AsDefault);
-                                    const preferLeftMap = isDefaultLaneQuant && toD > fromD && fromD === oldDrumLen16;
+                                    const preferLeftMap = isDefaultLaneQuant && fromD === oldDrumLen16;
                                     // Clear content
                                     oldSteps.forEach(n => n.remove());
                                     Array.from(lane.querySelectorAll('.beat-divider,.drum-playhead')).forEach(n => n.remove());
@@ -41427,6 +41507,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                     }
                                     const ph2 = document.createElement('div'); ph2.className = 'drum-playhead'; ph2.style.left = '0%'; lane.appendChild(ph2);
                                 });
+                                try { window._refreshSequenceGridBarSteps && window._refreshSequenceGridBarSteps(grid, { laneSelector: '.drum-row:not(.bass-row) .drum-lane', fallback: drumBaseLen16 }); } catch (_) { }
                             }
 
                             // Rebuild PATTERN lanes honoring per-lane D if patternGrid exists
@@ -41514,6 +41595,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                 });
                                 // Ensure pattern handlers are wired after rebuild
                                 try { if (typeof patternGrid._attachHandlers === 'function') patternGrid._attachHandlers(); } catch (_) { }
+                                try { window._refreshSequenceGridBarSteps && window._refreshSequenceGridBarSteps(patternGrid, { laneSelector: '.pattern-lane', fallback: patternBaseLen16 }); } catch (_) { }
                             }
                         } catch (_) { }
                     };
@@ -48445,7 +48527,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                         for (const [k, v] of mp.entries()) { patterns[String(k)] = Array.isArray(v) ? JSON.parse(JSON.stringify(v)) : v; }
                                     } else {
                                         // Fallback: capture current grid into pattern 1
-                                        const lanes = Array.from(document.querySelectorAll('.drum-row:not(.bass-row) .drum-lane'));
+                                        const lanes = Array.from(document.querySelectorAll('#drumGrid .drum-row:not(.bass-row) .drum-lane'));
                                         patterns['1'] = lanes.map(lane => Array.from(lane.querySelectorAll('.drum-step')).map(s => s.classList.contains('active') ? 1 : 0));
                                     }
                                 } catch (_) { }
@@ -48458,12 +48540,12 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                             laneQuants[String(k)] = Array.isArray(v) ? JSON.parse(JSON.stringify(v)) : v;
                                         }
                                     } else {
-                                        const lanes = Array.from(document.querySelectorAll('.drum-row:not(.bass-row) .drum-lane'));
+                                        const lanes = Array.from(document.querySelectorAll('#drumGrid .drum-row:not(.bass-row) .drum-lane'));
                                         laneQuants[String(active)] = lanes.map(lane => String(lane.dataset.quant || '').trim());
                                     }
                                 } catch (_) { laneQuants = {}; }
                                 // Per-lane controls (non-bass rows only)
-                                const lanes = Array.from(document.querySelectorAll('.drum-row:not(.bass-row)'));
+                                const lanes = Array.from(document.querySelectorAll('#drumGrid .drum-row:not(.bass-row)'));
                                 const laneControls = lanes.map(row => {
                                     try {
                                         const vol = row.querySelector('.drum-volume');
@@ -49455,7 +49537,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                             } catch (_) { }
                                             return 16;
                                         })();
-                                        const lanes = Array.from(document.querySelectorAll('.drum-row:not(.bass-row) .drum-lane'));
+                                        const lanes = Array.from(document.querySelectorAll('#drumGrid .drum-row:not(.bass-row) .drum-lane'));
                                         lanes.forEach((lane, i) => {
                                             const q = Array.isArray(arr) ? arr[i] : null;
                                             if (q) lane.dataset.quant = String(q);
@@ -49501,7 +49583,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                         // Apply grid for this pattern
                                         const patt = this._drumPatterns ? this._drumPatterns.get(act) : null;
                                         if (patt && Array.isArray(patt)) {
-                                            const lanes = Array.from(document.querySelectorAll('.drum-row:not(.bass-row) .drum-lane'));
+                                            const lanes = Array.from(document.querySelectorAll('#drumGrid .drum-row:not(.bass-row) .drum-lane'));
                                             lanes.forEach((lane, i) => {
                                                 const row = patt[i] || [];
                                                 const steps = Array.from(lane.querySelectorAll('.drum-step'));
@@ -49512,7 +49594,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                     }
                                     // Per-lane controls
                                     if (Array.isArray(d.laneControls)) {
-                                        const rows = Array.from(document.querySelectorAll('.drum-row:not(.bass-row)'));
+                                        const rows = Array.from(document.querySelectorAll('#drumGrid .drum-row:not(.bass-row)'));
                                         d.laneControls.forEach((cfg, idx) => {
                                             const row = rows[idx]; if (!row || !cfg) return;
                                             try {
@@ -50023,13 +50105,12 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                                                 if (whole) denom = parseInt(whole[1], 10) || safeLen;
                                                             }
                                                             denom = Math.max(1, Math.min(maxLen, denom || safeLen));
+                                                            const targetLen = (qStr === String(safeLen) || qStr === `${safeLen}/${safeLen}`) ? safeLen : Math.max(safeLen, denom);
                                                             lane.quant = qStr;
                                                             if (!Array.isArray(lane.steps)) lane.steps = [];
                                                             if (!Array.isArray(lane.vel)) lane.vel = [];
-                                                            while (lane.steps.length < denom) lane.steps.push(0);
-                                                            while (lane.vel.length < denom) lane.vel.push(100);
-                                                            if (lane.steps.length > denom) lane.steps = lane.steps.slice(0, denom);
-                                                            if (lane.vel.length > denom) lane.vel = lane.vel.slice(0, denom);
+                                                            lane.steps = window._resizeSequenceArray ? window._resizeSequenceArray(lane.steps, targetLen, 0) : lane.steps;
+                                                            lane.vel = window._resizeSequenceArray ? window._resizeSequenceArray(lane.vel, targetLen, 100) : lane.vel;
                                                         } catch (_) { }
                                                     });
                                                     inst.len = safeLen;
