@@ -3942,15 +3942,71 @@
         .pattern-modal {
             display: flex;
             flex-direction: column;
+            width: fit-content !important;
+            max-width: calc(100vw - 20px) !important;
+            height: auto !important;
+            max-height: calc(100vh - 20px) !important;
+            aspect-ratio: auto !important;
         }
 
         #patternModal .modal-body,
         .pattern-modal .modal-body {
             display: flex !important;
             flex-direction: column;
-            flex: 1 1 auto;
+            flex: 0 1 auto;
+            height: auto !important;
+            max-height: calc(100vh - 94px) !important;
             min-height: 0;
             overflow: hidden !important;
+        }
+
+        #patternModal .drum-grid-container,
+        .pattern-modal .drum-grid-container {
+            flex: 0 1 auto !important;
+            width: max-content !important;
+            max-width: calc(100vw - 44px) !important;
+            height: auto !important;
+            max-height: calc(100vh - 140px) !important;
+            min-height: 0 !important;
+            overflow: auto !important;
+        }
+
+        #patternGrid,
+        .pattern-grid {
+            width: max-content !important;
+            min-width: 100% !important;
+            height: auto !important;
+            max-height: calc(100vh - 150px) !important;
+            overflow: visible !important;
+        }
+
+        #drumModal {
+            width: fit-content !important;
+            max-width: calc(100vw - 20px) !important;
+            height: auto !important;
+            max-height: calc(100vh - 20px) !important;
+            aspect-ratio: auto !important;
+        }
+
+        #drumModal .modal-body {
+            height: auto !important;
+            max-height: calc(100vh - 94px) !important;
+            overflow: hidden !important;
+        }
+
+        #drumModal .drum-grid-container {
+            width: max-content !important;
+            max-width: calc(100vw - 44px) !important;
+            height: auto !important;
+            max-height: calc(100vh - 140px) !important;
+            min-height: 0 !important;
+            overflow: auto !important;
+        }
+
+        #drumGrid.drum-grid {
+            width: max-content !important;
+            min-width: 100% !important;
+            height: auto !important;
         }
 
         #patternModal .drum-grid-container,
@@ -4871,12 +4927,12 @@
             /* Scale font size with viewport */
         }
 
-        /* Pattern/Drum/Bass modals: fixed aspect ratio + custom resize handle */
+        /* Pattern/Drum/Bass modals: free-aspect wide editors + custom resize handle */
         #patternModal,
         #bassModal,
         .pattern-modal {
             resize: none;
-            aspect-ratio: var(--modal-aspect, 4 / 3);
+            aspect-ratio: auto;
             overflow: hidden;
         }
 
@@ -8841,16 +8897,12 @@ NESTED REPEATS: [[C Am F G]x2 [C Dm Em F^]x2]x4
                 };
             }
 
-            // Fixed-aspect resize handle for pattern/drum/bass modals (works on iPad)
+            // Free-aspect resize handle for pattern/drum/bass modals (works on iPad)
             if (!window._ensureModalAspectResize) {
                 window._ensureModalAspectResize = function (modal) {
                     try {
                         if (!modal || modal._aspectResizeWired) return;
                         if (!modal.classList.contains('floating-modal')) return;
-
-                        const rect = modal.getBoundingClientRect();
-                        modal._aspectRatio = modal._aspectRatio || (rect.width / rect.height) || 4 / 3;
-                        modal.style.setProperty('--modal-aspect', String(modal._aspectRatio));
 
                         let handle = modal.querySelector('.modal-resize-handle');
                         if (!handle) {
@@ -8872,13 +8924,6 @@ NESTED REPEATS: [[C Am F G]x2 [C Dm Em F^]x2]x4
                             let nextW = Math.max(minW, Math.min(maxW, w));
                             let nextH = Math.max(minH, Math.min(maxH, h));
 
-                            const ratio = modal._aspectRatio || (nextW / nextH) || 4 / 3;
-                            // Enforce aspect ratio
-                            if (nextW / nextH > ratio) {
-                                nextW = nextH * ratio;
-                            } else {
-                                nextH = nextW / ratio;
-                            }
                             return { w: nextW, h: nextH };
                         };
 
@@ -8888,8 +8933,7 @@ NESTED REPEATS: [[C Am F G]x2 [C Dm Em F^]x2]x4
                                 startX,
                                 startY,
                                 startW: startRect.width,
-                                startH: startRect.height,
-                                ratio: modal._aspectRatio || (startRect.width / startRect.height) || 4 / 3
+                                startH: startRect.height
                             };
                         };
 
@@ -8898,14 +8942,8 @@ NESTED REPEATS: [[C Am F G]x2 [C Dm Em F^]x2]x4
                             if (!st) return;
                             const dx = x - st.startX;
                             const dy = y - st.startY;
-                            let newW = st.startW + dx;
-                            let newH = st.startH + dy;
-                            // Use the dominant drag axis to preserve intent
-                            if (Math.abs(dx) >= Math.abs(dy)) {
-                                newH = newW / st.ratio;
-                            } else {
-                                newW = newH * st.ratio;
-                            }
+                            const newW = st.startW + dx;
+                            const newH = st.startH + dy;
                             const clamped = clampSize(newW, newH);
                             modal.style.width = `${Math.round(clamped.w)}px`;
                             modal.style.height = `${Math.round(clamped.h)}px`;
@@ -9265,7 +9303,11 @@ NESTED REPEATS: [[C Am F G]x2 [C Dm Em F^]x2]x4
 
                     window.deferUiTask(() => {
                         try { window._ensureModalDotScaling(modal); modal._dotScaleApply && modal._dotScaleApply(); } catch (_) { }
-                        try { window._ensureModalAspectResize && window._ensureModalAspectResize(modal); } catch (_) { }
+                        try {
+                            if (!(modal && (modal.id === 'patternModal' || modal.id === 'drumModal' || modal.classList?.contains('pattern-modal')))) {
+                                window._ensureModalAspectResize && window._ensureModalAspectResize(modal);
+                            }
+                        } catch (_) { }
                         try {
                             const omni = window.autoharp;
                             if (omni && typeof omni._wireDrumFxPanel === 'function') omni._wireDrumFxPanel();
@@ -9556,7 +9598,11 @@ NESTED REPEATS: [[C Am F G]x2 [C Dm Em F^]x2]x4
                     }
                     window.deferUiTask(() => {
                         try { window._ensureModalDotScaling(modal); modal._dotScaleApply && modal._dotScaleApply(); } catch (_) { }
-                        try { window._ensureModalAspectResize && window._ensureModalAspectResize(modal); } catch (_) { }
+                        try {
+                            if (!(modal && (modal.id === 'patternModal' || modal.id === 'drumModal' || modal.classList?.contains('pattern-modal')))) {
+                                window._ensureModalAspectResize && window._ensureModalAspectResize(modal);
+                            }
+                        } catch (_) { }
                         try { window._autoSizePatternModals && window._autoSizePatternModals(); } catch (_) { }
                         try { window._fitFloatingModalToViewport && window._fitFloatingModalToViewport(modal, { clampHeight: true }); } catch (_) { }
                         try {
@@ -19403,7 +19449,11 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                             };
                         }
                         try { modal._dotScaleApply && modal._dotScaleApply(); } catch (_) { }
-                        try { window._ensureModalAspectResize && window._ensureModalAspectResize(modal); } catch (_) { }
+                        try {
+                            if (!(modal && (modal.id === 'patternModal' || modal.id === 'drumModal' || modal.classList?.contains('pattern-modal')))) {
+                                window._ensureModalAspectResize && window._ensureModalAspectResize(modal);
+                            }
+                        } catch (_) { }
                         try { window._fitFloatingModalToViewport && window._fitFloatingModalToViewport(modal); } catch (_) { }
                         // Draggable header
                         if (!modal._dragWired) {
@@ -22393,12 +22443,21 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                     const stepVar = rs.getPropertyValue('--step-size').trim();
                     const stepSize = (Number.isFinite(parseFloat(stepVar)) && parseFloat(stepVar) > 0) ? parseFloat(stepVar) : 22;
                     const barSteps = Math.max(1, parseInt(maxBarSteps || '16', 10) || 16);
-                    const requiredLaneWidth = barSteps * stepSize; // matches lane width calc
+                    const getLaneUnit = (modal) => {
+                        try {
+                            const cs = getComputedStyle(modal);
+                            const dot = parseFloat(cs.getPropertyValue('--dot-size')) || 14;
+                            const gap = parseFloat(cs.getPropertyValue('--dot-gap')) || 0;
+                            return Math.max(6, dot + (gap * 2));
+                        } catch (_) { return stepSize; }
+                    };
 
                     const measureRequired = (modal) => {
                         // Prefer a non-bass row for measuring controls; fallback to any .drum-row
                         const rows = modal.querySelectorAll('.drum-row');
                         if (!rows || rows.length === 0) return 0;
+                        const laneUnit = getLaneUnit(modal);
+                        const requiredLaneWidth = barSteps * laneUnit;
                         let maxRow = 0;
                         rows.forEach(row => {
                             // Ensure the lane reflects the current barSteps width when measuring
@@ -22432,6 +22491,24 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                         return Math.min(contentNeed, vw);
                     };
 
+                    const measureHeight = (modal, container) => {
+                        try {
+                            const header = modal.querySelector('.modal-header');
+                            const gridHeader = modal.querySelector('.drum-grid-header');
+                            const grid = container.querySelector('.drum-grid, .pattern-grid, #patternGrid, #drumGrid, #bassGrid');
+                            const synthToggle = modal.querySelector('#patternSynthToggleBar, .pattern-synth-toggle-bar');
+                            const borderPad = 24;
+                            const headerH = header ? Math.ceil(header.getBoundingClientRect().height || header.offsetHeight || 0) : 0;
+                            const gridHeaderH = gridHeader ? Math.ceil(gridHeader.getBoundingClientRect().height || gridHeader.offsetHeight || 0) : 0;
+                            const gridH = grid ? Math.ceil(grid.scrollHeight || grid.getBoundingClientRect().height || 0) : 0;
+                            const synthH = synthToggle ? Math.ceil(synthToggle.getBoundingClientRect().height || synthToggle.offsetHeight || 0) : 0;
+                            const minH = Math.max(220, headerH + gridHeaderH + gridH + synthH + borderPad);
+                            const vv = window.visualViewport;
+                            const vh = Math.max(240, Math.floor((vv ? vv.height : window.innerHeight) * 0.92));
+                            return Math.min(vh, minH);
+                        } catch (_) { return 0; }
+                    };
+
                     const apply = (modalId) => {
                         const modal = document.getElementById(modalId);
                         if (!modal) return;
@@ -22446,10 +22523,16 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                             const nextW = Math.ceil(cur.width > vw ? vw : need);
                             modal.style.width = nextW + 'px';
                         }
+                        try {
+                            const nextH = measureHeight(modal, container);
+                            if (nextH > 0 && (cur.height > nextH + 80 || cur.height < nextH - 12)) {
+                                modal.style.height = Math.ceil(nextH) + 'px';
+                            }
+                        } catch (_) { }
                         // Ensure container spans full width; avoid clipping
                         container.style.maxWidth = 'none';
                         container.style.overflowX = 'auto';
-                        try { window._fitFloatingModalToViewport && window._fitFloatingModalToViewport(modal); } catch (_) { }
+                        try { window._fitFloatingModalToViewport && window._fitFloatingModalToViewport(modal, { clampHeight: true }); } catch (_) { }
                     };
 
                     apply('drumModal');
