@@ -32680,6 +32680,8 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                         newPatternBtn: 'New Pattern',
                         newDrumBtn: 'New Drum',
                         newLoopBtn: 'New Loop',
+                        transposeUpBtn: 'Global Transpose Up',
+                        transposeDownBtn: 'Global Transpose Down',
                         allOutSectionBtn: 'Section All Out',
                         allInSectionBtn: 'Section All In',
                         muteAllPatternsBtn: 'Mute All Patterns',
@@ -32697,7 +32699,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                                 kind: 'action-button',
                                 targetId: `action:${id}`,
                                 label: actionLabels[id],
-                                source: id.includes('Transport') || id === 'playStopToggleBtn' ? 'transport' : 'strip',
+                                source: id.includes('Transport') || id === 'playStopToggleBtn' ? 'transport' : (id.startsWith('transpose') ? 'transpose' : 'strip'),
                                 controlId: id
                             });
                         } catch (_) { }
