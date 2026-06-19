@@ -4807,6 +4807,28 @@
             cursor: pointer;
         }
 
+        @keyframes globalTransposePulse {
+            0%, 100% {
+                box-shadow: 0 0 6px rgba(250, 204, 21, 0.42), 0 0 0 rgba(250, 204, 21, 0);
+                filter: brightness(1.05);
+            }
+
+            50% {
+                box-shadow: 0 0 12px rgba(250, 204, 21, 0.72), 0 0 18px rgba(56, 189, 248, 0.28);
+                filter: brightness(1.18);
+            }
+        }
+
+        #sidebarTransposeCluster.transpose-active .sidebar-transpose-btn {
+            animation: globalTransposePulse 2.4s ease-in-out infinite;
+            border-color: #facc15 !important;
+        }
+
+        #sidebarTransposeCluster.transpose-active #transposeDelta {
+            color: #fde68a !important;
+            text-shadow: 0 0 8px rgba(250, 204, 21, 0.62);
+        }
+
         #transposeDelta {
             font-size: clamp(8px, calc(var(--left-sidebar-content-width) * 0.11), 10px) !important;
             color: #9db6c8 !important;
@@ -35217,6 +35239,17 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                     this.generateRootButtons();
                 }
 
+                _updateGlobalTransposeIndicator() {
+                    try {
+                        const edo = this.currentTuning || 12;
+                        const delta = ((parseInt(this.transposeDelta || 0, 10) % edo) + edo) % edo;
+                        const deltaEl = document.getElementById('transposeDelta');
+                        if (deltaEl) deltaEl.textContent = String(delta);
+                        const cluster = document.getElementById('sidebarTransposeCluster');
+                        if (cluster) cluster.classList.toggle('transpose-active', delta !== 0);
+                    } catch (_) { }
+                }
+
                 // Apply a global transpose by n EDO steps; rootless: rename headers from absolute steps when possible and retune
                 applyTransposeStep(n = 0) {
                     if (this._projectLocked) return;
@@ -35317,8 +35350,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                         });
                     } catch (_) { }
                     // Update delta indicator
-                    const deltaEl = document.getElementById('transposeDelta');
-                    if (deltaEl) deltaEl.textContent = String(this.transposeDelta);
+                    this._updateGlobalTransposeIndicator();
                     // Update any locked column header tooltips
                     try {
                         document.querySelectorAll('.extension-column').forEach(col => {
@@ -35337,6 +35369,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                     } catch (_) { }
                     // Refresh keyboard highlights after global transpose
                     try { if (this.currentActiveColumnEl) this.highlightKeyboardForColumn(this.currentActiveColumnEl); } catch (_) { }
+                    try { if (this._hasAutoharpMidiHeldNotes && this._hasAutoharpMidiHeldNotes()) this._queueAutoharpMidiPreviewRefresh(); } catch (_) { }
                     // While PLAY is running, refresh active ARP/CHORD sources in-place so
                     // pattern lanes follow transpose immediately without restarting cycle phase.
                     try {
@@ -36249,8 +36282,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                     if (!list.length) return;
                     // Reset global transpose and rebuild
                     this.transposeDelta = 0;
-                    const deltaEl = document.getElementById('transposeDelta');
-                    if (deltaEl) deltaEl.textContent = '0';
+                    this._updateGlobalTransposeIndicator();
                     this.autoCreateColumnsFromText(list);
                     if (modal) modal.style.display = 'none';
                 }
@@ -37195,8 +37227,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                         window._activeSectionId = id;
                         try { if (typeof window._renderSectionButtons === 'function') window._renderSectionButtons(); } catch (_) { }
                         this.transposeDelta = 0;
-                        const deltaEl = document.getElementById('transposeDelta');
-                        if (deltaEl) deltaEl.textContent = '0';
+                        this._updateGlobalTransposeIndicator();
                         this.autoCreateColumnsFromText(list);
                         try {
                             const r = document.getElementById('chordRuler');
@@ -37274,8 +37305,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                     }
 
                     this.transposeDelta = 0;
-                    const deltaEl = document.getElementById('transposeDelta');
-                    if (deltaEl) deltaEl.textContent = '0';
+                    this._updateGlobalTransposeIndicator();
                     this.autoCreateColumnsFromText(list);
                     try {
                         if (typeof window.__xenApplyChordLayout === 'function') window.__xenApplyChordLayout();
@@ -50028,10 +50058,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
 
                                 // Update transpose UI label if present
                                 try {
-                                    const deltaEl = document.getElementById('transposeDelta');
-                                    if (deltaEl && typeof this.transposeDelta === 'number') {
-                                        deltaEl.textContent = String(this.transposeDelta);
-                                    }
+                                    this._updateGlobalTransposeIndicator && this._updateGlobalTransposeIndicator();
                                 } catch (_) { }
 
                                 // Checkboxes
@@ -61608,10 +61635,11 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                         if (aNote !== bNote) return aNote - bNote;
                         return (parseInt(a?.channel, 10) || 0) - (parseInt(b?.channel, 10) || 0);
                     });
+                    const globalTransposeDelta = ((parseInt(this.transposeDelta || 0, 10) % edo) + edo) % edo;
                     const literalSteps = Array.from(new Set(entries.map((entry) => {
                         const midiNote = parseInt(entry?.note, 10);
                         const semi = ((midiNote % 12) + 12) % 12;
-                        return norm(this.semitoneToStep(semi, edo));
+                        return norm(this.semitoneToStep(semi, edo) + globalTransposeDelta);
                     })));
                     if (!literalSteps.length) return null;
 
@@ -61636,7 +61664,7 @@ registerProcessor('${_loopWorkletProcessorName}', ChromoToneLoopCaptureProcessor
                         absSteps.sort((a, b) => this.stepToSemitone(a, edo) - this.stepToSemitone(b, edo));
                         const lowestMidiNote = parseInt(orderedEntries[0]?.note, 10);
                         const lowestSemi = ((lowestMidiNote % 12) + 12) % 12;
-                        const lowestAbs = norm(this.semitoneToStep(lowestSemi, edo) + shiftDelta);
+                        const lowestAbs = norm(this.semitoneToStep(lowestSemi, edo) + globalTransposeDelta + shiftDelta);
                         let disableSimpleRootOverride = true;
                         rootAbs = lowestAbs;
                         if (absSteps.length === 3) {
